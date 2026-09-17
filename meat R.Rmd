@@ -1,0 +1,387 @@
+
+
+install.packages("logistf")
+
+```{r}
+library(logistf)
+library(tidyverse)
+```
+
+
+r"( ... )"
+```{r}
+data <- read.csv(r"(C:\Users\hidy0\Desktop\consultation\meat\meat (1).csv)")
+data
+```
+
+```{r}
+linear_m <- lm(pH ~ Time, data)
+quad_m <- lm(pH ~ Time + I(Time^2), data)
+
+anova(linear_m, quad_m)
+```
+
+
+
+
+
+```{r}
+data <- read.csv(r"(C:\Users\hidy0\Desktop\consultation\meat\meat (1).csv)")
+
+# Recode pH into a binary outcome
+data$y <- ifelse(data$pH <= 6, 1, 0)
+
+library(logistf)
+
+firth_m <- logistf(y ~ Time, data = data)
+
+summary(firth_m)
+```
+```{r}
+plot(data$Time, data$y,
+     xlab = "Time",
+     ylab = "P(y = 1)",
+     ylim = c(0, 1))
+
+tt <- seq(min(data$Time), max(data$Time), length.out = 200)
+
+lines(
+  tt,
+  predict(
+    firth_m,
+    newdata = data.frame(Time = tt),
+    type = "response"
+  )
+)
+```
+
+
+
+#Asymptotic regression
+```{r}
+data <- read.csv(r"(C:\Users\hidy0\Desktop\consultation\meat\meat (1).csv)")
+
+asym_m <- nls(
+  pH ~ a + b * exp(-c * Time),
+  data = data,
+  start = list(
+    a = 5,
+    b = 2,
+    c = 0.3
+  )
+)
+
+summary(asym_m)
+```
+```{r}
+plot(data$Time, data$pH,
+     xlab = "Time",
+     ylab = "pH")
+
+tt <- seq(min(data$Time), max(data$Time), length.out = 200)
+
+lines(
+  tt,
+  predict(
+    asym_m,
+    newdata = data.frame(Time = tt)
+  )
+)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+#EDA (Exploaratory data analysis)
+
+```{r}
+str(data)
+summary(data)
+```
+Time is integer and pH is numeric
+
+
+
+Q. Were the two pH values at each time point measured repeatedly from the same two samples over time, or were two different samples measured at each time point?
+
+##case 1
+Suppose the same samples are measured repeatedly over time.
+
+For example, the first sample measured at Time 1 is the same sample measured at Time 2, Time 4, and so on.
+
+Because repeated measurements come from the same sample, the observations may be correlated rather than fully independent.
+
+For example, a sample with a relatively high pH at one time point may also tend to have a relatively high pH at later time points.
+
+Therefore, a simple linear model that assumes independent observations may not be appropriate. Depending on the situation, we may need a repeated-measures model, a mixed-effects model, or a model that explicitly accounts for the correlation structure.
+
+
+
+Since there are two samples at each time point, I think we should label the sample values as 1 and 2, because it doesn't identify which observation belongs to Sample1 versus Sample2. 
+
+```{r}
+data$Sample <- rep(c("Sample1", "Sample2"), 6)
+
+data
+```
+
+And then it's useful to plot how PH changes over time
+```{r}
+plot(data$Time, data$pH)
+
+plot(data$Time[data$Sample == "Sample1"], data$pH[data$Sample == "Sample1"])
+plot(data$Time[data$Sample == "Sample2"], data$pH[data$Sample == "Sample2"])
+```
+
+```{r}
+coplot(pH ~ Time | Sample, data)
+```
+
+Both shows similar downward pattern = They behave similarly.
+
+
+Check the shape trend of relationship bet pH and Time
+-abline() adds a straight line to an existing plot. Here, it adds the regression line produced by lm() on top of the scatterplot.
+```{r}
+plot(data$Time[data$Sample == "Sample1"],
+     data$pH[data$Sample == "Sample1"])
+abline(lm(pH ~ Time, data[data$Sample == "Sample1", ]))
+
+plot(data$Time[data$Sample == "Sample2"], 
+     data$pH[data$Sample == "Sample2"])
+abline(lm(pH ~ Time, data[data$Sample == "Sample2", ]))
+```
+or
+```{r}
+data1 <- subset(data, Sample = "Sample1")
+plot(data1$Time, data1$pH)
+abline(lm(pH ~ Time, data1))
+```
+ visual evidence: linear not fit well / 
+
+
+
+```{r}
+linear_m <- lm(pH ~ Time, data)
+quad_m <- lm(pH ~ Time + I(Time^2), data)
+
+anova(linear_m, quad_m)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+If the p-value is smaller than the significance level \(\alpha\), we reject \(H_0\) = we reject the hypothesis that the quadratic term is unnecessary.
+
+=The very small p-value indicates that adding the quadratic term substantially improves the fit compared with the simple linear model.
+
+
+The key point is that the slope \(\beta_1\) is constant everywhere.
+$$
+\text{pH} = \beta_0 + \beta_1 \text{Time}
+$$
+
+Once this term is included, the slope no longer has to stay constant. In other words, the rate of decline is allowed to change over time.
+$$
+\text{pH}
+=
+\beta_0
++
+\beta_1 \text{Time}
++
+\beta_2 \text{Time}^2
+$$
+
+So the curvature test is essentially asking: Do we need \(\beta_2\)?
+
+ANOVA(Analysis of Variance)
+“After adding the quadratic term, did the unexplained variation decrease enough?”
+
+
+NA
+```{r}
+sum(is.na(data))
+```
+
+outlier
+```{r}
+boxplot(pH ~ Sample, data)
+plot(data$Time, data$pH)
+```
+
+EDA result
+-Time was imported as an integer and pH as a numeric variable.
+-Both samples showed a similar decreasing pattern in pH over time.
+-Adding a quadratic term substantially improved the model fit, suggesting strong evidence of curvature.
+-No obvious outliers or unusually inconsistent observations were apparent from the boxplot or the pH–Time plot.
+
+
+#model selection and justification
+1. same samples were repeatedly measured
+2. The pH–Time relationship appears curved / nonlinear rather than simply linear.
+
+-> “What model can account for both of these features?”
+
+"mixed-effects model with a quadratic time effect"
+
+$$
+\text{pH}_{ij}
+=
+\beta_0
++
+\beta_1\text{Time}_{ij}
++
+\beta_2\text{Time}_{ij}^2
++
+b_i
++
+\epsilon_{ij}
+$$
+A mixed-effects model combines the overall common pattern with sample-specific differences.
+
+It is called mixed because it combines fixed effects and random effects.
+
+- Fixed effect = Time → This is the overall effect we are interested in.
+- Random effect = Sample → This represents natural differences among samples.
+
+
+
+fit the model using lmer
+```{r}
+library(lme4)
+model <- lmer(pH ~ Time + I(Time^2) + (1|Sample), data)
+```
+
+
+
+
+
+```{r}
+summary(model)
+fixef(model)
+ranef(model)
+
+VarCorr(model)
+fitted(model)
+plot(model)
+
+qqnorm(resid(model))
+qqline(resid(model))
+```
+
+#Case2: Independent 
+
+
+
+r"( ... )"
+```{r}
+data <- read.csv(r"(C:\Users\hidy0\Desktop\consultation\meat\meat (1).csv)")
+data
+```
+
+The observations should not be linked across time because they come from different samples.
+Each row represents one independent observation.
+
+
+
+```{r}
+str(data)
+summary(data)
+plot(data$Time, data$pH)
+```
+
+The scatterplot suggests that pH decreases over time.
+The relationship may not be perfectly linear.
+There are no obvious outliers.
+
+*Analysis of Variance
+:it is partitioning variation and comparing how much variation is explained versus unexplained.
+```{r}
+linear_m <- lm(pH ~ Time, data)
+quad_m <- lm(pH ~ Time + I(Time^2), data)
+anova(linear_m, quad_m)
+```
+We compared a simple linear regression model with a quadratic regression model.
+
+RSS measures the amount of unexplained variation remaining after fitting the model. -> Quadratic RSS = 0.14: The quadratic model leaves much less unexplained variation than the linear model.
+
+But adding another predictor almost always reduces RSS.
+-> The F-test(Fisher's F statistic) is used to determine whether the null hypothesis should be rejected.
+
+$$
+F
+=
+\frac{\text{Extra variation explained by }Time^2}
+{\text{Residual variation}}
+$$
+
+small pvalue: reject the null hypothesis and conclude that the quadratic term should be included in the model.
+
+$$
+H_0:\beta_2=0
+$$
+
+```{r}
+summary(quad_m)
+```
+
+$$
+\widehat{\text{pH}}
+=
+7.129
+-
+0.294(\text{Time})
++
+0.0092(\text{Time}^2)
+$$
+
+I understand that the linear term is negative and the quadratic term is positive, but I'm having trouble understanding what that actually means in practice.
+SO what does that mean for how pH changes over time?
+
+
+
+```{r}
+plot(quad_m)
+```
+
+If the points closely follow the reference line, it suggests that the residuals are approximately normally distributed and mostly centered around zero.
+
+
+- qqnorm() plots the observed residuals as points.
+- qqline() draws the reference line representing the pattern expected if the residuals were normally distributed.
+```{r}
+qqnorm(resid(quad_m))
+#reference line
+qqline(resid(quad_m))
+```
+
+
+
+
+
+
+
+
